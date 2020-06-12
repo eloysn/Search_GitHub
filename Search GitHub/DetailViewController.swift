@@ -14,7 +14,6 @@ class DetailViewController: UIViewController {
     var model: Repositories? {
         didSet {
             populateModel()
-            
         }
     }
 

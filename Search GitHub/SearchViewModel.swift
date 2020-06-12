@@ -4,49 +4,68 @@ import Foundation
 import RxSwift
 import RxCocoa
 
-final class SearchViewModel {
+final class SearchViewModel: ViewModelType {
     
-    let clientAPI = SessionAPI()
-    var repoArr = [Repositories] ()
-    let diposeBag = DisposeBag()
-    var page = BehaviorRelay<Int>(value: 1)
-    var query = BehaviorRelay<String>(value: "")
+    private let disposeBag = DisposeBag()
+    private let activity = ActivityIndicator()
+    private let page = PublishSubject<Int>()
+    private let query = BehaviorSubject<String>(value: "")
+    private let isSearching = BehaviorSubject<Bool>(value: false)
+    private let listRepos = PublishSubject<[Repositories]>()
+    private let loadPage = PublishSubject<Bool>()
+    private let gitHubService: GitHubService
+    private var numberPage: Int = 1
     
-    func listReposCount() -> Int {
+    let input: Input
+    struct Input {
+        let query: AnyObserver<String>
+        let isSearching: AnyObserver<Bool>
+        let loadPage: AnyObserver<Bool>
+    }
+    
+    let output: Output
+    struct Output {
+        let listRepos: PublishSubject<[Repositories]>
+        let activity: Driver<Bool>
+    }
+    
+    init(service: GitHubService = GitHubServiceImpl()) {
+        self.gitHubService = service
+        self.input = Input(query: query.asObserver(),
+                           isSearching: isSearching.asObserver(),
+                           loadPage: loadPage.asObserver())
+        self.output = Output(listRepos: listRepos,
+                             activity: activity.asDriver(onErrorJustReturn: false))
+                             
+    }
+    
+    func bind() {
+        loadPage.filter { $0 }
+            .map {_ in return self.numberPage }
+            .bind(to: page)
+            .disposed(by: disposeBag)
+         
+        let repos = page.startWith(numberPage).flatMapLatest { [unowned self] page in
+            self.gitHubService.getRepositories(page: page)
+                .do(onSuccess: { self.numberPage = $0.last?.id ?? 1 })
+                .trackActivity(self.activity)
+                .catchError { _ in Observable.just([]) }
+                .scan([]) { $0 + $1 } }
+                
         
-        return repoArr.count - 5
-    }
-    func getPage() -> Int? {
-        guard let page = repoArr.last?.id else {
-            return nil
+        let searchRepos = query.distinctUntilChanged()
+            .filter {$0.count > 2}
+            .startWith("")
+            .throttle(.milliseconds(500), scheduler: MainScheduler.instance)
+            .flatMapLatest { [unowned self] query in
+                self.gitHubService.searchRepositories(query: query)
+                    .trackActivity(self.activity)
+                    .catchError { _ in return Observable.just([]) }
         }
-        return page
+    
+        Observable.combineLatest(repos, searchRepos, isSearching).map { list, search, isSearch in
+                return isSearch ? search : list
+            }.bind(to: listRepos)
+            .disposed(by: disposeBag)
     }
-    
-    private lazy var _listRepos: Observable<[Repositories]> = self.page.asObservable()
-        .distinctUntilChanged()
-        .flatMapLatest { page  in
-            return self.clientAPI.send(request: API.listRepos(page: page))
-        }.catchErrorJustReturn([])
-    
-    private(set) lazy var listRepos: Observable<[Repositories]> = self._listRepos
-        .map { repos  in
-            self.repoArr += repos
-            return self.repoArr
-    }
-    
-    
-    private(set) lazy var searchProyects: Observable<[Repositories]> = self._searchProyects.asObservable()
-        .map {  p in
-            return p.items
-        }.catchErrorJustReturn([])
-    
-    
-    private lazy var _searchProyects: Observable<SearchItems> = self.query.asObservable()
-        .distinctUntilChanged()
-        .filter{ $0.count > 0 && !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        .flatMap {  query in
-            return self.clientAPI.send(request: API.searchRepos(query: query))
-    }
-    
 }

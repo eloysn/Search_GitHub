@@ -1,51 +1,33 @@
-
-
 import Foundation
 import RxSwift
-
-
-
-enum ErrorSessionAPI: Error {
-    case responseError(error: Error)
-    case errorNotDecodeJson
-    case errorBadStatusCode
-    case errorContentPayload(code: Int, message: String)
-}
+import Alamofire
 
 final class SessionAPI {
     // MARK: - API Private
     
-    lazy var session: URLSession = {
-        let config = URLSessionConfiguration.default
-        let session = URLSession(configuration: config)
+    func sendWithError<T: APIRequest>(request: T, isAuthentication: Bool = false) -> Single<T.Response> {
+        let req = request.requestWithBaseURL()
         
-        return session
-    }()
-    
-    func send<T: Codable>(request: Resource) -> Observable<T> {
-        return Observable<T>.create { [unowned self ] observer in
-            let request = request.requestWithBaseURL()
-            let task = self.session.dataTask(with: request) { (data, response, error) in
-                do {
-                    //print(String(data: data ?? Data(), encoding: .utf8))
-                    let model: T = try JSONDecoder().decode(T.self, from: data ?? Data())
-                    observer.onNext(model)
-                } catch let error {
-                    print(error.localizedDescription)
-                    observer.onError(error)
+        return Single<T.Response>.create { observer in
+            let task = AF.request(req).validate().responseData { data in
+                if let err = data.error {
+                    observer(.error(APIError.errorServer(err)))
                 }
-                observer.onCompleted()
+                if let data = data.data {
+                    do {
+                        let model = try JSONDecoder().decode(T.Response.self, from: data)
+                        observer(.success(model))
+                    } catch let error {
+                        print(error)
+                        observer(.error(APIError.errorParseResponse))
+                    }
+                }
             }
-            task.resume()
-            
             return Disposables.create {
                 task.cancel()
             }
         }
     }
-
-
-
 }
 
 

@@ -5,21 +5,20 @@ import RxCocoa
 
 class SearchViewController: UITableViewController {
 
-
     // MARK: - Private
     private let disposeBag = DisposeBag()
     private let viewModel = SearchViewModel()
     private var listRepos = [Repositories]()
     private var searchRepos = [Repositories]()
     private let searchController = UISearchController(searchResultsController: nil)
-    
+    private let activity = UIActivityIndicatorView()
+    let model = SearchViewModel()
    
     // MARK: - Life cycle
     override func viewDidLoad() {
         super.viewDidLoad()
         setup()
         setupBinding()
-        
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -34,126 +33,64 @@ class SearchViewController: UITableViewController {
 
     // MARK: - Configure
     func setup()  {
-        
-        tableView.dataSource = self
+        tableView.dataSource = nil
         tableView.rowHeight = 100
         
-        searchController.searchResultsUpdater = self
         searchController.obscuresBackgroundDuringPresentation = false
         searchController.searchBar.placeholder = "Search..."
         navigationItem.searchController = searchController
         definesPresentationContext = true
         navigationItem.title = "Github"
+        
+        activity.translatesAutoresizingMaskIntoConstraints = false
+        tableView.addSubview(activity)
+        activity.centerXAnchor.constraint(equalTo: tableView.centerXAnchor).isActive = true
+        activity.centerYAnchor.constraint(equalTo: tableView.centerYAnchor).isActive = true
+        activity.color = .gray
+        activity.style = .whiteLarge
+        activity.hidesWhenStopped = true
     }
     
     func setupBinding()  {
+        searchController.searchBar.rx.text.orEmpty
+            .bind(to: viewModel.input.query)
+            .disposed(by: disposeBag)
         
-        viewModel.listRepos.observeOn(MainScheduler.instance)
-            .subscribe { event in
-                guard let result = event.element else {
-                    return
-                }
-                self.listRepos = result
-                self.updateTable()
-            }.disposed(by: disposeBag)
+        searchController.searchBar.rx.text.orEmpty.map { !$0.isEmpty }
+            .bind(to: viewModel.input.isSearching)
+            .disposed(by: disposeBag)
         
-        viewModel.searchProyects.observeOn(MainScheduler.instance)
-            .subscribe { event in
-                guard let result = event.element else {
-                    return
-                }
-                self.searchRepos = result
-                self.updateTable()
-            }.disposed(by: disposeBag)
+        viewModel.output.listRepos
+            .observeOn(MainScheduler.instance)
+            .bind(to: tableView.rx.items(cellIdentifier: "Cell", cellType: SearchViewCell.self)) { index, model, cell in
+                cell.populate(model: model)
+        }.disposed(by: disposeBag)
         
-        tableView.rx.willDisplayCell
-            .subscribe(onNext: { cell, index in
-                if index.row == self.viewModel.listReposCount() {
-                    if let page = self.viewModel.getPage()   {
-                        self.viewModel.page.accept(page)}
-                }}).disposed(by: disposeBag)
+        tableView.rx.contentOffset
+            .map { [unowned self] _ in self.tableView.isNearBottomEdge() }
+            .distinctUntilChanged()
+            .bind(to: viewModel.input.loadPage)
+            .disposed(by: disposeBag)
         
-        searchController.searchBar.rx.searchButtonClicked.subscribe { _ in
-            self.viewModel.query.accept(self.searchController.searchBar.text ?? "")
-            }.disposed(by: disposeBag)
+        tableView.rx.modelSelected(Repositories.self).do(onNext: { repo in
+            self.performSegue(withIdentifier: "showDetail", sender: repo)
+            }).subscribe().disposed(by: disposeBag)
         
-        searchController.searchBar.rx.cancelButtonClicked.subscribe { _ in
-            self.updateTable()
-            }.disposed(by: disposeBag)
+        viewModel.output.activity
+            .drive(activity.rx.isAnimating)
+            .disposed(by: disposeBag)
         
+        viewModel.bind()
     }
-    
-    // MARK: - Private instance methods
-    func searchBarIsEmpty() -> Bool {
-        // Returns true if the text is empty or nil
-        return searchController.searchBar.text?.isEmpty ?? true
-    }
-    func isFiltering() -> Bool {
-        return searchController.isActive && !searchBarIsEmpty()
-    }
-    func updateTable() {
-        tableView.reloadData()
-    }
-
-    
-    // MARK: - Segues
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        if segue.identifier == "showDetail", let detailVC = (segue.destination as? UINavigationController)?.topViewController as?  DetailViewController {
-            
-            if let indexPath = tableView.indexPathForSelectedRow {
-                let repo: Repositories
-                if isFiltering() {
-                    repo = searchRepos[indexPath.row]
-                    
-                }else{
-                    repo = listRepos[indexPath.row]
-                }
-                
-                detailVC.model = repo
-            }
-        }
-    }
-
-    
-
-
 }
-   // MARK: - Table View
+
+// MARK: - Segues
 extension SearchViewController {
-    
-    
-    override func numberOfSections(in tableView: UITableView) -> Int {
-        return 1
-    }
-    
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        if isFiltering() {
-            return searchRepos.count
-        }else {
-            return listRepos.count
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        if segue.identifier == "showDetail",
+            let detailVC = (segue.destination as? UINavigationController)?.topViewController as?  DetailViewController,
+            let model = sender as? Repositories {
+            detailVC.model = model
         }
     }
-    
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath) as! SearchViewCell
-        if isFiltering() {
-            cell.populate(model: searchRepos[indexPath.row])
-        }else {
-            cell.populate(model: listRepos[indexPath.row])
-            
-        }
-        
-        
-        return cell
-    }
-    
-    
-}
-
-extension SearchViewController: UISearchResultsUpdating {
-    
-    func updateSearchResults(for searchController: UISearchController){
-        updateTable()
-    }
-    
 }
