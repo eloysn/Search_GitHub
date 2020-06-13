@@ -10,7 +10,6 @@ class SearchViewController: UITableViewController {
     private let viewModel = SearchViewModel()
     private let searchController = UISearchController(searchResultsController: nil)
     private let activity = UIActivityIndicatorView()
-    let model = SearchViewModel()
    
     // MARK: - Life cycle
     override func viewDidLoad() {
