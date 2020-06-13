@@ -36,12 +36,11 @@ final class SearchViewModel: ViewModelType {
                            loadPage: loadPage.asObserver())
         self.output = Output(listRepos: listRepos,
                              activity: activity.asDriver(onErrorJustReturn: false))
-                             
     }
     
     func bind() {
         loadPage.filter { $0 }
-            .map {_ in return self.numberPage }
+            .map { [unowned self] _ in return self.numberPage }
             .bind(to: page)
             .disposed(by: disposeBag)
          
