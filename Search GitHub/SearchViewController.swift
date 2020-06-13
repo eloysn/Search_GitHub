@@ -8,8 +8,6 @@ class SearchViewController: UITableViewController {
     // MARK: - Private
     private let disposeBag = DisposeBag()
     private let viewModel = SearchViewModel()
-    private var listRepos = [Repositories]()
-    private var searchRepos = [Repositories]()
     private let searchController = UISearchController(searchResultsController: nil)
     private let activity = UIActivityIndicatorView()
     let model = SearchViewModel()
