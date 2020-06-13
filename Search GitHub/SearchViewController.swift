@@ -10,7 +10,8 @@ class SearchViewController: UITableViewController {
     private let viewModel = SearchViewModel()
     private let searchController = UISearchController(searchResultsController: nil)
     private let activity = UIActivityIndicatorView()
-   
+    private let segeIdentifier = "showDetail"
+    
     // MARK: - Life cycle
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -59,7 +60,8 @@ class SearchViewController: UITableViewController {
         
         viewModel.output.listRepos
             .observeOn(MainScheduler.instance)
-            .bind(to: tableView.rx.items(cellIdentifier: "Cell", cellType: SearchViewCell.self)) { index, model, cell in
+            .bind(to: tableView.rx.items(cellIdentifier: SearchViewCell.identifier,
+                                         cellType: SearchViewCell.self)) { index, model, cell in
                 cell.populate(model: model)
         }.disposed(by: disposeBag)
         
@@ -69,9 +71,10 @@ class SearchViewController: UITableViewController {
             .bind(to: viewModel.input.loadPage)
             .disposed(by: disposeBag)
         
-        tableView.rx.modelSelected(Repositories.self).do(onNext: { repo in
-            self.performSegue(withIdentifier: "showDetail", sender: repo)
-            }).subscribe().disposed(by: disposeBag)
+        tableView.rx.modelSelected(Repositories.self).do(onNext: { [unowned self] repo in
+            self.performSegue(withIdentifier: self.segeIdentifier, sender: repo)})
+            .subscribe()
+            .disposed(by: disposeBag)
         
         viewModel.output.activity
             .drive(activity.rx.isAnimating)
@@ -84,7 +87,7 @@ class SearchViewController: UITableViewController {
 // MARK: - Segues
 extension SearchViewController {
     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        if segue.identifier == "showDetail",
+        if segue.identifier == segeIdentifier,
             let detailVC = (segue.destination as? UINavigationController)?.topViewController as?  DetailViewController,
             let model = sender as? Repositories {
             detailVC.model = model
